@@ -19,21 +19,21 @@
 
 ### 文件结构
 
-* `cli_framework.sh`: `bash-cli` 框架的核心实现文件。
+* `bash-cli.sh`: `bash-cli` 框架的核心实现文件。
 * `mycli.sh`: 一个使用 `bash-cli` 构建的示例 CLI 工具，展示了如何注册和使用命令及 Flag。
 
 ### 快速开始
 
 #### 1. 获取 `bash-cli`
 
-将 `cli_framework.sh` 和你的主脚本（例如 `mycli.sh`）放在同一目录下。
+将 `bash-cli.sh` 和你的主脚本（例如 `mycli.sh`）放在同一目录下。
 
 #### 2. 赋予执行权限
 
 确保你的脚本具有执行权限：
 
 ```bash
-chmod +x mycli.sh cli_framework.sh
+chmod +x mycli.sh bash-cli.sh
 ```
 
 #### 3. 运行示例
@@ -50,13 +50,13 @@ chmod +x mycli.sh cli_framework.sh
 
 #### 3.1. 引入框架
 
-在你的主脚本 (例如 `mycli.sh`) 的开头，通过 `source` 命令引入 `cli_framework.sh`：
+在你的主脚本 (例如 `mycli.sh`) 的开头，通过 `source` 命令引入 `bash-cli.sh`：
 
 ```bash
 #!/bin/bash
 
 # 引入 bash-cli 核心框架
-source "$(dirname "$0")/cli_framework.sh"
+source "$(dirname "$0")/bash-cli.sh"
 
 # ... 你的命令和 Flag 注册
 ```
