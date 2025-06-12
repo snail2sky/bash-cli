@@ -7,6 +7,7 @@
 # Description: A robust and modular Bash command-line framework.
 # Designed for Bash 4.x+ (using associative arrays).
 # Supports dot-separated command paths (e.g., "serve.start").
+# Site: https://github.com/snail2sky/bash-cli
 # ==============================================================================
 
 # ==============================================================================
