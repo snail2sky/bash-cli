@@ -1,306 +1,242 @@
-# bash-cli - 简洁强大的 Bash 命令行框架
+-----
 
-`bash-cli` 是一个轻量级、健壮且高度模块化的 Bash 命令行工具框架，旨在极大地简化 Bash 脚本中复杂 CLI 工具的开发。它支持直观的子命令结构（如 `serve.start`）、全面的 Flag 处理（包括短 Flag、长 Flag、带值 Flag、布尔 Flag 和必需 Flag），并能自动生成清晰的帮助信息，让你的命令行工具更具专业性。
+## 🚀 Bash-CLI Framework: 您的下一代 Bash 命令行接口工具
 
-### 核心特性
+Bash-CLI 是一个强大、模块化且易于使用的 Bash 命令行接口 (CLI) 框架，旨在简化复杂的 Bash 脚本开发，使其更具可维护性和可扩展性。它支持命令注册、参数解析、灵活的标志处理、自动帮助生成以及子命令结构，让您的 Bash 脚本像专业工具一样。
 
-* **直观的命令层级**: 通过点分隔符 (`.`) 轻松定义多级子命令，例如 `mycli serve` 或 `mycli serve.start`。
-* **全面的 Flag 支持**:
-    * **短 Flag**: 如 `-v` (verbose)。
-    * **长 Flag**: 如 `--verbose`。
-    * **带值的 Flag**: 如 `--port 8080` 或 `--port=8080`。
-    * **布尔 Flag**: 仅存在即为 `true` (如 `--background`)。
-    * **默认值**: 为 Flag 设置预设值。
-    * **必需 Flag**: 强制用户提供某些关键 Flag。
-* **全局 Flag**: 支持在任何命令之前或之后传递的全局 Flag，其值在整个 CLI 应用生命周期中有效。
-* **自动帮助生成**: 自动为命令和 Flag 生成详细且易读的帮助信息。
-* **模块化设计**: 鼓励将命令逻辑封装在独立的 Bash 函数中，提高代码可维护性和可读性。
-* **简洁的 API**: 提供清晰的 API 来注册命令、Flag 和获取 Flag 值，降低学习成本。
+### ✨ 核心特性
 
-### 文件结构
+  * **命令注册与组织**: 轻松定义顶级命令和多层级子命令（例如 `user add`），使您的 CLI 结构清晰。
+  * **灵活的参数和标志处理**:
+      * 支持长标志 (`--flag-name`) 和短标志 (`-f`)。
+      * 支持带值的标志（`--flag value` 或 `--flag=value`）。
+      * 支持布尔型标志（`--enable-feature`，默认 `true`）。
+      * 支持必填标志和默认值。
+      * 自动解析位置参数。
+  * **智能帮助文档生成**: 根据注册的命令和标志自动生成详细、美观的帮助信息，包括用法、描述、可用命令和标志列表。
+  * **模块化设计**: 将每个命令的代码分离到单独的文件中，方便团队协作和代码维护。
+  * **代码生成工具**: 内置 `bash-cli.sh` 生成器，帮助您快速初始化项目和创建新的命令文件，并自动更新主脚本的引入。
+  * **无需子目录的子命令**: 支持 `command.subcommand` 这种扁平化的命令文件结构（例如 `commands/user.add.sh`），而非 `commands/user/add.sh`，简化文件管理。
+  * **命令文件权限管理**: 确保主脚本在添加新的命令源文件后仍然保持可执行权限。
+  * **对 `bash-cli.sh` 工具本身的帮助支持**: 您可以直接运行 `bash-cli.sh --help` 来获取生成器工具的使用说明。
+  * **`add` 命令的智能主脚本识别**: `bash-cli.sh add` 命令在不指定 `--main-script` 时，会自动尝试识别当前目录下最可能的主 CLI 脚本，提高便利性。
 
-* `bash-cli.sh`: `bash-cli` 框架的核心实现文件。
-* `mycli.sh`: 一个使用 `bash-cli` 构建的示例 CLI 工具，展示了如何注册和使用命令及 Flag。
+-----
 
-### 快速开始
+### 📦 安装与快速开始
 
-#### 1. 获取 `bash-cli`
+1.  **下载框架文件**:
+    将 `bash-cli.sh` 文件下载到您的项目根目录。
 
-将 `bash-cli.sh` 和你的主脚本（例如 `mycli.sh`）放在同一目录下。
+    ```bash
+    curl -o bash-cli.sh https://raw.githubusercontent.com/your_repo/bash-cli/main/bash-cli.sh # 替换为您的实际仓库地址
+    chmod +x bash-cli.sh
+    ```
 
-#### 2. 赋予执行权限
+2.  **初始化新项目**:
+    使用 `bash-cli.sh` 生成器初始化您的 CLI 项目。这将创建您的主 CLI 脚本（例如 `mycli.sh`）和 `commands/` 目录，其中包含 `root.sh`。
 
-确保你的脚本具有执行权限：
+    ```bash
+    ./bash-cli.sh init mycli.sh
+    # 这将创建 mycli.sh 和 commands/root.sh
+    ```
+
+3.  **运行您的 CLI**:
+    尝试运行您新创建的 CLI。
+
+    ```bash
+    ./mycli.sh --help
+    # 或者直接
+    ./mycli.sh
+    ```
+
+-----
+
+### 🛠️ 使用示例
+
+#### 1\. 创建新命令
+
+要创建一个名为 `user` 的新命令：
 
 ```bash
-chmod +x mycli.sh bash-cli.sh
+./bash-cli.sh add user --main-script mycli.sh
+# 或者，如果 mycli.sh 在当前目录且是唯一的CLI主脚本，可以省略 --main-script
+./bash-cli.sh add user
 ```
 
-#### 3. 运行示例
-
-尝试运行附带的示例 CLI 工具：
-
-```bash
-./mycli.sh
-```
-
-### 构建你的 CLI 工具
-
-使用 `bash-cli` 开发命令行工具非常直接。
-
-#### 3.1. 引入框架
-
-在你的主脚本 (例如 `mycli.sh`) 的开头，通过 `source` 命令引入 `bash-cli.sh`：
+这将在 `commands/` 目录下创建一个 `user.sh` 文件。其内容如下：
 
 ```bash
 #!/bin/bash
 
-# 引入 bash-cli 核心框架
-source "$(dirname "$0")/bash-cli.sh"
+# Function for the 'user' command.
+cli_user_func() {
+    echo "Executing command: user"
+    echo "Positional arguments: $@"
 
-# ... 你的命令和 Flag 注册
+    # 示例：访问全局标志
+    # local verbose_global=$(cli_get_global_flag "verbose")
+    # if [[ "$verbose_global" == "true" ]]; then
+    #     echo "Verbose output enabled."
+    # fi
+}
+
+# Register the 'user' command.
+cli_register_command \
+    "user" \
+    "cli_user_func" \
+    "Manage user accounts." \
+    "This command provides subcommands to manage user accounts, including adding, deleting, and listing users." \
+    "${CLI_TOOL_NAME} user [command] [flags]"
+
+# 示例：为 'user' 命令注册一个本地标志
+# cli_register_flag \
+#     "user" \
+#     "dry-run" \
+#     "d" \
+#     "false" \
+#     "Perform a dry run without making changes." \
+#     "bool" \
+#     "false"
 ```
 
-#### 3.2. 注册命令 (`cli_register_command`)
+#### 2\. 添加子命令
 
-每个命令行命令都对应一个 Bash 函数。使用 `cli_register_command` 来注册你的命令及其对应的函数。
+要为 `user` 命令添加一个名为 `add` 的子命令（即 `user add`）：
 
 ```bash
-cli_register_command \
-    <用户命令路径> \
-    <对应函数名> \
-    <短描述> \
-    [长描述 (可选)] \
-    [使用示例 (可选)]
+./bash-cli.sh add user.add --main-script mycli.sh
+# 同样，也可以省略 --main-script 让其自动检测
+./bash-cli.sh add user.add
 ```
 
-* **`<用户命令路径>`**: 用户在命令行中输入的命令层级。
-    * **根命令**: 使用空字符串 `""`。
-    * **一级子命令**: 例如 `"serve"`。
-    * **多级子命令**: 使用点分隔符，例如 `"serve.start"`。
-* **`<对应函数名>`**: 当此命令被调用时，框架会执行的 Bash 函数名。
-* **`<短描述>`**: 在 `help` 信息中显示的简要描述。
-* `[长描述]`: (可选) 更详细的描述，将在 `help` 命令中显示。
-* `[使用示例]`: (可选) 命令的典型使用示例，方便用户快速理解。
-
-**示例:**
+这将在 `commands/` 目录下创建一个 `user.add.sh` 文件。其内容如下：
 
 ```bash
-# 根命令函数
-cli_root_func() {
-    echo "Welcome to my CLI tool!"
+#!/bin/bash
+
+# Function for the 'user.add' command.
+cli_user_add_func() {
+    echo "Executing command: user.add"
+    echo "Positional arguments: $@"
+
+    # 获取名为 'username' 的位置参数
+    local username="${1:-}" # 第一个位置参数
+    if [[ -z "$username" ]]; then
+        echo -e "${CLI_COLOR_RED}Error: Username is required.${CLI_COLOR_RESET}" >&2
+        cli_display_help "user.add"
+        return 1
+    fi
+    echo "Adding user: $username"
+
+    # 示例：获取标志值
+    # local force_creation=$(cli_get_flag "force")
+    # if [[ "$force_creation" == "true" ]]; then
+    #     echo "Forcing user creation."
+    # fi
 }
-# 注册根命令 (用户命令路径为 "")
+
+# Register the 'user.add' command.
 cli_register_command \
-    "" \
-    "cli_root_func" \
-    "A simple CLI tool example."
+    "user.add" \
+    "cli_user_add_func" \
+    "Add a new user to the system." \
+    "This command creates a new user account with specified details. Requires a username as the first positional argument." \
+    "${CLI_TOOL_NAME} user add <username> [--force]"
 
-# `serve` 子命令函数
-cli_serve_func() {
-    echo "Serving application..."
-}
-# 注册 `serve` 命令 (用户命令路径为 "serve")
-cli_register_command \
-    "serve" \
-    "cli_serve_func" \
-    "Start the server."
-
-# `serve.start` 子命令函数
-cli_serve_start_func() {
-    echo "Starting server in background."
-}
-# 注册 `serve.start` 命令 (用户命令路径为 "serve.start")
-cli_register_command \
-    "serve.start" \
-    "cli_serve_start_func" \
-    "Start the server process in the background."
-```
-
-#### 3.3. 注册 Flag (`cli_register_flag` / `cli_register_global_flag`)
-
-为你的命令定义可以接受的 Flag。Flag 可以是全局的，也可以是命令特定的。
-
-```bash
+# 示例：为 'user.add' 命令注册一个本地标志
 cli_register_flag \
-    <用户命令路径> \
-    <长 Flag 名称> \
-    <短 Flag 字符 (或空)> \
-    <默认值> \
-    <描述> \
-    <类型 (string|bool)> \
-    [是否必需 (true|false)]
+    "user.add" \
+    "force" \
+    "f" \
+    "false" \
+    "Force user creation even if user exists." \
+    "bool" \
+    "false"
+
+cli_register_flag \
+    "user.add" \
+    "email" \
+    "e" \
+    "" \
+    "Email address for the new user." \
+    "string" \
+    "false"
 ```
 
-* **`<用户命令路径>`**: Flag 所属的命令路径。
-    * **全局 Flag**: 使用空字符串 `""`。
-    * **命令特定 Flag**: 使用该命令的用户命令路径 (例如 `"serve"` 或 `"serve.start"`)。
-* **`<长 Flag 名称>`**: Flag 的完整名称，例如 `verbose` (用户输入 `--verbose`)。
-* **`<短 Flag 字符>`**: Flag 的单字符别名，例如 `v` (用户输入 `-v`)。如果不需要短 Flag，请留空 `""`。
-* **`<默认值>`**: 如果用户未在命令行中提供此 Flag，将使用的预设值。
-* **`<描述>`**: 在 `help` 信息中显示的 Flag 描述。
-* **`<类型>`**: Flag 值的预期数据类型，可以是 `string` (字符串) 或 `bool` (布尔)。
-* `[是否必需]`: (可选) `true` 或 `false`。如果设置为 `true` 且用户未提供该 Flag，CLI 将报错并显示帮助。默认为 `false`。
+#### 3\. 运行命令和访问参数/标志
 
-**注册全局 Flag 的快捷函数**:
-
-为了方便注册全局 Flag，你可以使用 `cli_register_global_flag` 函数，它与 `cli_register_flag ""` 的作用是相同的。
+在您的 `mycli.sh` 中引入新创建的命令（如果 `bash-cli.sh add` 自动添加了就无需手动操作）：
 
 ```bash
-cli_register_global_flag \
-    <长 Flag 名称> \
-    <短 Flag 字符 (或空)> \
-    <默认值> \
-    <描述> \
-    <类型 (string|bool)> \
-    [是否必需 (true|false)]
-```
-
-**示例:**
-
-```bash
-# 注册全局 Flag (使用快捷函数)
-cli_register_global_flag "debug" "D" "false" "Enable global debug logging." "bool"
-cli_register_global_flag "config" "c" "" "Path to configuration file." "string"
-
-# 注册 `serve` 命令的本地 Flag
-cli_register_flag "serve" "port" "p" "8000" "Port to listen on." "string"
-cli_register_flag "serve" "host" "" "127.0.0.1" "Host to bind to." "string"
-
-# 注册 `serve.start` 命令的本地 Flag (包含一个必需 Flag)
-cli_register_flag "serve.start" "background" "b" "false" "Run in background (daemonize)." "bool"
-cli_register_flag "serve.start" "env" "e" "development" "Deployment environment (e.g., prod, dev)." "string" "true" # 必需 Flag
-```
-
-#### 3.4. 获取 Flag 值 (`cli_get_flag` / `cli_get_global_flag`)
-
-在你的命令函数内部，你可以使用提供的函数来获取已解析的 Flag 值。
-
-* `cli_get_flag <Flag 名称>`: 这是获取 Flag 值的推荐方法。它会自动根据当前命令上下文的优先级来返回 Flag 值（优先本地 Flag，其次全局 Flag）。
-* `cli_get_global_flag <Flag 名称>`: 如果你明确需要获取一个**被定义为全局的 Flag 的值**，并且希望忽略任何同名的本地 Flag 可能存在的覆盖，可以使用此函数。
-
-**示例:**
-
-```bash
-# 在命令函数中
-cli_root_func() {
-    local verbose=$(cli_get_flag "verbose")       # 获取全局 Flag "verbose" 的值
-    local config_path=$(cli_get_flag "config")     # 获取全局 Flag "config" 的值
-    local global_debug=$(cli_get_global_flag "debug") # 明确获取全局 Flag "debug" 的值
-
-    if [[ "$verbose" == "true" ]]; then echo "Verbose mode enabled."; fi
-    if [[ -n "$config_path" ]]; then echo "Using config file: $config_path"; fi
-    if [[ "$global_debug" == "true" ]]; then echo "Global debug is ON."; fi
-}
-
-cli_serve_func() {
-    local port=$(cli_get_flag "port") # 获取 `serve` 命令的本地 Flag "port" 的值
-    local debug_setting=$(cli_get_flag "debug") # 获取当前上下文的 `debug` Flag 值 (可能是全局的)
-    echo "Serving on port: $port (Debug: $debug_setting)"
-}
-```
-
-#### 3.5. 运行 CLI 逻辑
-
-最后，在你的主脚本末尾调用 `cli_run` 函数，传入所有命令行参数，`bash-cli` 将接管解析和分派任务：
-
-```bash
-# --- 运行 CLI ---
+# mycli.sh
+# ...
+source "$(dirname "$0")/commands/user.sh"
+source "$(dirname "$0")/commands/user.add.sh"
+# ...
 cli_run "$@"
 ```
 
-### 详细使用示例
-
-假设你的主脚本名为 `mycli.sh`。
-
-#### 根命令和全局 Flag
+现在您可以运行这些命令了：
 
 ```bash
-# 运行根命令，不带任何 Flag
-./mycli.sh
-# 预期输出:
-# Welcome to my CLI tool!
-# Use 'mycli.sh help' for more information.
-
-# 运行根命令，带全局 Flag
-./mycli.sh -D
-# 预期输出:
-# Global debug mode is ON (retrieved via cli_get_global_flag).
-# Welcome to my CLI tool!
-# Use 'mycli.sh help' for more information.
-
-./mycli.sh --config /path/to/my.conf
-# 预期输出:
-# Using config file: /path/to/my.conf
-# Welcome to my CLI tool!
-# Use 'mycli.sh help' for more information.
-
-# 运行根命令，带多个全局 Flag
-./mycli.sh -D -c /tmp/app.conf
-# 预期输出:
-# Global debug mode is ON (retrieved via cli_get_global_flag).
-# Using config file: /tmp/app.conf
-# Welcome to my CLI tool!
-# Use 'mycli.sh help' for more information.
+./mycli.sh user add bob --email bob@example.com -f
+# Output:
+# Executing command: user.add
+# Positional arguments: bob
+# Adding user: bob
+# Forcing user creation. # 如果您在 cli_user_add_func 中取消了注释并使用了该标志
 ```
 
-#### 子命令和本地 Flag
+获取帮助信息：
 
 ```bash
-# 运行 `serve` 命令，使用默认端口
-./mycli.sh serve
-# 预期输出:
-# Serving on 127.0.0.1:8000...
-# Remaining arguments for serve:
+./mycli.sh user --help
+# 这将显示 'user' 命令的帮助，包括其子命令 'add'。
 
-# 运行 `serve` 命令，指定端口和主机
-./mycli.sh serve --port 9000 --host 0.0.0.0
-# 预期输出:
-# Serving on 0.0.0.0:9000...
-# Remaining arguments for serve:
-
-# 运行 `serve.start` 命令，带本地 Flag 和全局 Flag
-./mycli.sh serve.start -D --background -e production
-# 预期输出:
-# [Serve Start] Global debug mode is ON (retrieved via cli_get_global_flag).
-# Starting server in background: true
-# Logging to file:
-# Environment: production
-# Remaining arguments for 'serve start':
+./mycli.sh user add --help
+# 这将显示 'user.add' 命令的详细帮助，包括其标志。
 ```
 
-#### 帮助信息
+-----
 
-```bash
-# 查看根命令帮助
-./mycli.sh help
-# 或
-./mycli.sh --help
-# 或
-./mycli.sh -h
+### 📝 重构与维护注意事项
 
-# 查看 `serve` 命令帮助
-./mycli.sh help serve
-# 或
-./mycli.sh serve --help
+在重构和维护基于 Bash-CLI 的项目时，请考虑以下几点：
 
-# 查看 `serve.start` 命令帮助
-./mycli.sh help serve.start
-# 或
-./mycli.sh serve.start --help
-```
+1.  **版本兼容性**: Bash-CLI 框架需要 **Bash 4.x 或更高版本**。在项目开始时或环境部署时，务必检查 Bash 版本。
+2.  **命令命名约定**:
+      * 使用小写字母和连字符（`-`）或点（`.`）来命名命令（例如 `my-command`, `user.add`）。
+      * 对应的函数名建议使用 `cli_command_path_func` 的形式（例如 `cli_user_add_func`）。
+3.  **模块化组织**:
+      * 将每个命令的代码放在其自己的 `.sh` 文件中，例如 `commands/my-command.sh`。
+      * 子命令使用点分隔符对应文件名，例如 `user.add` 命令的文件名为 `commands/user.add.sh`。
+      * 在主 CLI 脚本（例如 `mycli.sh`）中，按需 `source` 这些命令文件。建议将 `root.sh` 放在最前面。
+4.  **清晰的帮助信息**:
+      * 在 `cli_register_command` 中提供清晰的 `short_description` 和 `long_description`。
+      * 为每个命令及其标志提供 `example` 用法，这会直接显示在帮助输出中。
+      * 为每个标志提供有意义的 `description`。
+5.  **参数和标志的访问**:
+      * **位置参数**直接通过 `$1`, `$2` 等在命令函数中访问，或者通过 `"$@"` 访问所有参数。
+      * **标志值**应始终通过 `cli_get_flag "flag_name"` 或 `cli_get_global_flag "flag_name"` 来获取，而不是直接访问 `$1` 或 `$2`。这能确保正确处理解析后的值，包括默认值。
+6.  **错误处理与退出**:
+      * 在命令函数内部，当发生错误时，使用 `echo -e "${CLI_COLOR_RED}Error: ...${CLI_COLOR_RESET}" >&2` 将错误信息输出到标准错误。
+      * 错误发生后，通常应调用 `exit 1` 来表示程序非正常退出，或者 `return 1` 让当前函数返回失败状态。
+      * 如果需要显示特定命令的帮助，可以调用 `cli_display_help "command.path"`。
+7.  **`source` 路径管理**:
+      * 使用 `source "$(dirname "$0")/bash-cli.sh"` 确保框架文件能被正确引入，无论主脚本在哪里被调用。
+      * 同样，在主脚本中引入命令文件时，使用 `source "$(dirname "$0")/${commands_dir}/command.sh"` 这种相对路径，以提高项目的可移植性。
+8.  **变量命名**:
+      * 框架内部变量统一使用 `CLI_` 前缀，以避免与用户脚本中的变量名冲突。
+      * 在您的命令函数中，建议使用 `local` 关键字声明变量，防止变量污染全局作用域。
+9.  **调试**:
+      * 利用 `echo` 语句进行调试，特别是在解析参数和标志的复杂逻辑中。
+      * 使用 `set -x` 可以在脚本执行时打印所有命令，帮助追踪执行流程（在生产环境中谨慎使用）。
+10. **代码风格与规范**:
+      * 遵循一致的 Bash 编码风格，例如 [ShellCheck](https://www.shellcheck.net/) 工具可以帮助您检查语法错误和潜在问题。
+      * 保持代码缩进和格式的统一，提高可读性。
+      * 添加充分的注释来解释复杂逻辑和命令用途。
 
-#### 错误处理 (必需 Flag 缺失)
+通过遵循这些指南，您将能够构建出健壮、可维护且用户友好的 Bash CLI 应用程序。
 
-```bash
-# 运行 `serve.start` 命令，但缺少必需的 `env` Flag
-./mycli.sh serve.start --background
-# 预期输出:
-# Error: Required flag --env not set for command context 'root serve start'.
-# Usage:
-#   mycli.sh serve.start [flags]
-#   mycli.sh serve.start [command]
-# ... (以及 serve.start 命令的帮助信息)
-```
-
----
+-----
