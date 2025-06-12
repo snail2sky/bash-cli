@@ -3,7 +3,7 @@
 # ==============================================================================
 # Bash CLI Framework
 # Version: 0.2.2 (Fix: Root flag parsing and root command execution robustness)
-# Author: Gemini
+# Author: Gemini(Google AI) snail
 # Description: A robust and modular Bash command-line framework.
 # Designed for Bash 4.x+ (using associative arrays).
 # Supports dot-separated command paths (e.g., "serve.start").
