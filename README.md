@@ -29,7 +29,7 @@ Bash-CLI 是一个强大、模块化且易于使用的 Bash 命令行接口 (CLI
     将 `bash-cli.sh` 文件下载到您的项目根目录。
 
     ```bash
-    curl -o bash-cli.sh https://raw.githubusercontent.com/your_repo/bash-cli/main/bash-cli.sh # 替换为您的实际仓库地址
+    curl -o bash-cli.sh https://raw.githubusercontent.com/snail2sky/bash-cli/main/bash-cli.sh 
     chmod +x bash-cli.sh
     ```
 
