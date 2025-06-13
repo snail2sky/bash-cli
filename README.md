@@ -20,6 +20,7 @@ Bash-CLI 是一个强大、模块化且易于使用的 Bash 命令行接口 (CLI
   * **命令文件权限管理**: 确保主脚本在添加新的命令源文件后仍然保持可执行权限。
   * **对 `bash-cli.sh` 工具本身的帮助支持**: 您可以直接运行 `bash-cli.sh --help` 来获取生成器工具的使用说明。
   * **`add` 命令的智能主脚本识别**: `bash-cli.sh add` 命令在不指定 `--main-script` 时，会自动尝试识别当前目录下最可能的主 CLI 脚本，提高便利性。
+  * **支持打包功能**：您可以直接运行 `bash-cli.sh bundle MAIN-SCRIPT` 来将所有分散的资源文件打包到一个单一文件中，方便携带
 
 -----
 
@@ -196,6 +197,17 @@ cli_run "$@"
 
 ./mycli.sh user add --help
 # 这将显示 'user.add' 命令的详细帮助，包括其标志。
+```
+#### 4\. 打包
+
+将所有的资源文件打包成一个独立的文件，方便携带使用，这样也符合我们对常规Shell脚本的理解
+
+```bash
+./bash-cli.sh bundle mycli.sh --output mycli-bundled.sh
+
+cp mycli-bundled.sh ANYWHERE/mycli-bundled.sh
+
+ANYWHERE/mycli-bundled.sh --help
 ```
 
 -----
