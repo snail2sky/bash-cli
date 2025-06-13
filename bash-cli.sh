@@ -1,8 +1,16 @@
 #!/bin/bash
-# bash-cli.sh (v0.4.7)
+# bash-cli.sh (v1.0.1)
 # A robust, modular, and easy-to-use Bash Command Line Interface (CLI) framework (Bash 4.x+ required).
 
+if [[ -z "${BASH_VERSINFO}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    echo "Error: This bundler requires Bash 4.x or higher." >&2
+    exit 1
+fi
 # --- Global Configuration and Variables ---
+declare -A _BUNDLER_PROCESSED_FILES # Tracks files already processed to avoid infinite loops and duplication.
+_BUNDLER_CONTENT_QUEUE=()            # Stores file paths in the order they should be included.
+_BUNDLER_CLI_RUN_LINE=""             # Stores the cli_run "$@" line from the main script.
+
 
 declare -A CLI_COMMANDS       # Stores command metadata: [command_path]=function_name
 declare -A CLI_COMMAND_DESCRIPTIONS # Stores command short descriptions: [command_path]=description
@@ -28,6 +36,183 @@ CLI_COLOR_YELLOW='\033[0;33m'
 CLI_COLOR_BLUE='\033[0;34m'
 CLI_COLOR_CYAN='\033[0;36m'
 CLI_COLOR_BOLD='\033[1m'
+
+# Logging functions
+_bundler_log_error() { echo -e "${CLI_COLOR_RED}Error: $*${CLI_COLOR_RESET}" >&2; }
+_bundler_log_success() { echo -e "${CLI_COLOR_GREEN}Success: $*${CLI_COLOR_RESET}"; }
+_bundler_log_info() { echo -e "${CLI_COLOR_CYAN}Info: $*${CLI_COLOR_RESET}"; }
+_bundler_log_warn() { echo -e "${CLI_COLOR_YELLOW}Warning: $*${CLI_COLOR_RESET}" >&2; }
+
+# --- Utility Function: Get absolute path of a file ---
+# This version is designed to be more robust by trying multiple resolution methods
+# and explicitly checking file existence.
+# Args: <path> <base_directory_for_resolution> (base_directory should be absolute)
+# Output: Absolute path if file exists, otherwise empty string.
+_bundler_get_abs_path() {
+    local target_path="$1"
+    local base_dir="$2" # This should already be an absolute physical path
+
+    local abs_path=""
+
+    if [[ -z "$target_path" ]]; then
+        echo ""
+        return 1
+    fi
+
+    # Attempt 1: If target_path is already absolute
+    if [[ "$target_path" = /* ]]; then
+        abs_path="$target_path"
+    else # Attempt 2: Resolve relative to base_dir
+        # Avoid // in path, handle /path/./file and /path/../file
+        abs_path="${base_dir}/${target_path}"
+        # Canonicalize the path by temporarily changing directory in a subshell
+        # This resolves `.` and `..` and removes redundant slashes
+        (
+            cd -P "$base_dir" >/dev/null 2>&1 && \
+            abs_path="$(pwd -P "$target_path" 2>/dev/null)"
+        ) || abs_path="" # If cd or pwd fails, clear abs_path
+    fi
+
+    # Attempt 3: Final check for existence using simple concatenation if above failed
+    if [[ -z "$abs_path" || ! -f "$abs_path" ]]; then
+        # Fallback to direct concatenation if resolution methods fail, then check existence
+        local simple_concat_path="${base_dir}/${target_path}"
+        # Clean up potential // or /./ or /../
+        simple_concat_path=$(echo "$simple_concat_path" | sed -E 's/\/\.\/|\/[^\/]+\/\.\.\/|\/\/\//g' | sed 's/\/\.$//' | sed 's/[^/]\/\.\.$//') # Simplified canonicalization
+        if [[ -f "$simple_concat_path" ]]; then
+            abs_path="$simple_concat_path"
+        else
+            echo "" # Still not found
+            return 1
+        fi
+    fi
+
+    # Final verification: Check if the resolved path actually points to a regular file
+    if [[ -f "$abs_path" ]]; then
+        echo "$abs_path"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
+}
+
+
+# --- Core Bundler Functions ---
+
+# Helper function to extract sourced file path safely from a line.
+# This is the improved logic to replace problematic regex.
+# Args: <line>
+# Output: sourced file path or empty string if not found.
+_bundler_get_sourced_path() {
+    local line="$1"
+    local trimmed_line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" # Trim leading/trailing whitespace
+    local path=""
+
+    # Check for "source <path>" or ". <path>"
+    # Using `case` for more robust and compatible pattern matching.
+    # Prioritize 'source ' then '. '
+    if [[ "$trimmed_line" == source\ * ]]; then
+        path="${trimmed_line#source }"
+    elif [[ "$trimmed_line" == .\ * ]]; then
+        path="${trimmed_line#. }"
+    else
+        echo "" # Not a source line
+        return 0
+    fi
+
+    # Remove quotes if present.
+    # Use parameter expansion for simpler cases, sed for robustness with mixed quotes/embedded quotes.
+    if [[ "$path" == \"*\" ]] || [[ "$path" == \'*\' ]]; then
+        path="$(echo "$path" | sed -e "s/^['\"]//" -e "s/['\"]$//")"
+    fi
+
+    # Remove comments after path, if any.
+    # Note: Bash comments are typically from '#' to end of line.
+    if [[ "$path" == *"#"* ]]; then
+        path="${path%%#*}" # Remove anything after #
+    fi
+
+    # Trim any remaining whitespace after quote removal or comment removal.
+    path="$(echo "$path" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+    echo "$path"
+}
+
+# Function to recursively extract file content and queue them for bundling.
+# It processes dependencies before adding itself to the content queue (depth-first).
+# Args: <file_path_to_process> <current_directory_for_resolution> <is_main_script>
+_bundler_extract_and_queue_content() {
+    local file_path_to_process="$1"
+    local current_dir="$2"
+    local is_main_script="${3:-false}" # Default to false
+
+    # Use our robust _bundler_get_abs_path instead of realpath directly
+    local abs_file_path=$(_bundler_get_abs_path "$file_path_to_process" "$current_dir")
+    if [[ -z "$abs_file_path" ]]; then # Check if _bundler_get_abs_path returned empty (file not found/invalid)
+        _bundler_log_error "File not found or invalid during bundling: '$file_path_to_process' (resolved from '$current_dir'). Please check path, permissions, or file existence."
+        return 1
+    fi
+
+    # Check if already processed to avoid infinite loops and redundant inclusion
+    if [[ -v _BUNDLER_PROCESSED_FILES["$abs_file_path"] ]]; then
+        # _bundler_log_info "Skipping already processed file: $abs_file_path"
+        return 0 # Already processed
+    fi
+
+    # Mark as processed *before* recursively calling, to handle circular dependencies properly
+    _BUNDLER_PROCESSED_FILES["$abs_file_path"]="true"
+    _bundler_log_info "Processing and queuing dependencies for: $abs_file_path"
+
+    # Important: Recursively process sourced files *first* (depth-first search)
+    # This ensures that dependencies appear before the files that source them in the final bundle.
+    local temp_sourced_files=() # Store sourced files in this specific file to process them.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        local sourced_file_raw=$(_bundler_get_sourced_path "$line")
+        if [[ -n "$sourced_file_raw" ]]; then
+            # Skip sourcing bash-cli.sh itself explicitly within other scripts,
+            # as it will be included as the core framework at the very beginning.
+            if [[ "$(basename "$sourced_file_raw")" == "bash-cli.sh" ]]; then
+                 _bundler_log_warn "Skipping explicit source of 'bash-cli.sh' in '$abs_file_path': '$line'. It will be pre-pended."
+                 continue
+            fi
+            temp_sourced_files+=("$sourced_file_raw")
+        fi
+    done < "$abs_file_path"
+
+    # Now, process the collected sourced files recursively
+    local source_resolution_dir="$(dirname "$abs_file_path")"
+    for sourced_file in "${temp_sourced_files[@]}"; do
+        local resolved_source_path=""
+        # Handle $(dirname "$0") in source paths. This is a common pattern.
+        if [[ "$sourced_file" == *"\$(dirname \"\$0\")"* ]]; then
+            # Replace $(dirname "$0") with the absolute path of the *current file being processed*
+            local temp_path_with_base="${sourced_file//\$(dirname \"\$0\")/$source_resolution_dir}"
+            temp_path_with_base=$(echo "$temp_path_with_base" | sed 's/\/\//\//g') # Clean up potential double slashes
+            resolved_source_path=$(_bundler_get_abs_path "$temp_path_with_base" "$source_resolution_dir") # Use our custom resolver
+        else
+            resolved_source_path=$(_bundler_get_abs_path "$sourced_file" "$source_resolution_dir") # Use our custom resolver
+        fi
+
+        if [[ -z "$resolved_source_path" ]]; then
+            _bundler_log_error "Could not resolve source path '$sourced_file' from '$abs_file_path'. Skipping."
+            continue
+	fi
+
+        # Recursively queue the sourced file. Pass its own directory for its relative sources.
+        if ! _bundler_extract_and_queue_content "$resolved_source_path" "$(dirname "$resolved_source_path")"; then
+            _bundler_log_error "Failed to process sourced file '$resolved_source_path'. Aborting bundle."
+            return 1
+        fi
+    done
+
+    # After all dependencies are processed, add the current file to the queue.
+    # This ensures a topological sort (dependencies come before dependents).
+    _BUNDLER_CONTENT_QUEUE+=("$abs_file_path")
+    # _bundler_log_info "Added to content queue: $abs_file_path"
+
+    return 0
+}
 
 # --- Core CLI Framework Functions ---
 
@@ -615,6 +800,7 @@ _cli_generator_display_help() {
     echo -e "${CLI_COLOR_BOLD}AVAILABLE COMMANDS:${CLI_COLOR_RESET}"
     printf "  %-20s %s\n" "init <main_script_name>" "Initializes a new Bash CLI project."
     printf "  %-20s %s\n" "add <command_path>" "Generates a new command boilerplate."
+    printf "  %-25s %s\n" "bundle <main_script_name>" "The path to your main CLI script (e.g., './mycli.sh')."
     echo ""
     echo -e "${CLI_COLOR_BOLD}FLAGS:${CLI_COLOR_RESET}"
     printf "  %-25s %s\n" "    -h, --help" "Show help for generator command."
@@ -627,8 +813,240 @@ _cli_generator_display_help() {
     printf "    %-25s %s\n" "--commands-dir <dir>" "Specify the directory for command files (default: commands)."
     printf "    %-25s %s\n" "--main-script <path>" "Specify the main CLI script to update (default: auto-detected)."
     echo ""
+    echo "  bundle options:"
+    printf "    %-25s %s\n" "--output <file>" "Specify the output bundled file name (default: <main_script_name>-bundled.sh)."
+    printf "    %-25s %s\n" "--keep-shebang" "Keep the shebang (#!/bin/bash) from the main script in the bundled output."
+    printf "    %-25s %s\n" "-h, --help" "Show this help message."
+    echo ""
 }
 
+# Main bundling function.
+# Args: <main_script_name> [--output <file>] [--keep-shebang]
+_cli_generator_bundle() {
+    local main_script_name="$1" # Positional argument 1 is the main script name
+    local output_file=""
+    local keep_shebang="false"
+
+    # Parse arguments for bundler command
+    # Use shift to consume main_script_name first
+    shift # Consume the main_script_name from "$@"
+    while (( "$#" )); do
+        case "$1" in
+            --output)
+                if [[ -n "$2" ]]; then output_file="$2"; shift 2;  fi
+                ;;
+            --keep-shebang)
+                keep_shebang="true"; shift
+                ;;
+            -h|--help)
+                _bundler_display_help_message; return 0
+                ;;
+            -*) # Unknown flag for bundler command
+                _bundler_log_error "Unknown flag for bundler: $1"; return 1
+                ;;
+            *) # Positional argument (should not happen if main_script_name is handled first)
+                _bundler_log_error "Unexpected argument for bundler: $1"; return 1
+                ;;
+        esac
+    done
+
+    if [[ -z "$main_script_name" ]]; then
+        _bundler_log_error "Bundler requires exactly one argument: <main_script_name>."
+        _bundler_display_help_message
+        return 1
+    fi
+
+
+    if [[ "$main_script_name" == "-h|--help" ]]; then
+        _bundler_display_help_message
+        return 0
+    fi
+
+    if [[ ! -f "$main_script_name" ]]; then
+        _bundler_log_error "The $main_script_name not exist."
+        _bundler_display_help_message
+        return 1
+    fi
+
+    # Resolve the main script path relative to the current working directory.
+    # For the main script, we will try to resolve it directly.
+    local current_working_dir="$(pwd -P 2>/dev/null)" # Get the physical current working directory, suppress errors
+    if [[ -z "$current_working_dir" ]]; then
+        _bundler_log_error "Could not determine current working directory. Please ensure read/execute permissions."
+        return 1
+    fi
+
+    local main_script_abs_path=""
+    # First, try to resolve mycli.sh relative to the current directory directly
+    if [[ -f "${current_working_dir}/${main_script_name}" ]]; then
+        main_script_abs_path=$(_bundler_get_abs_path "${current_working_dir}/${main_script_name}" "/") # Pass root as base dir
+    fi
+
+    # Fallback if direct resolution failed (e.g. if mycli.sh is a symlink or complex path)
+    if [[ -z "$main_script_abs_path" ]]; then
+        main_script_abs_path=$(_bundler_get_abs_path "$main_script_name" "$current_working_dir")
+    fi
+
+    if [[ -z "$main_script_abs_path" ]]; then
+        _bundler_log_error "Main script not found: '$main_script_name' (resolved to empty path). Please ensure the file exists and has read/execute permissions, or try using an absolute path for it."
+        return 1
+    fi
+
+
+    if [[ -z "$output_file" ]]; then
+        output_file="${main_script_name%.sh}-bundled.sh" # Default output file
+    fi
+
+    # Reset global bundler variables for each bundle operation
+    _BUNDLER_PROCESSED_FILES=()
+    _BUNDLER_CONTENT_QUEUE=()
+    _BUNDLER_CLI_RUN_LINE=""
+
+    _bundler_log_info "Starting bundling from '${main_script_name}' to '${output_file}'..."
+
+    # Determine the absolute path to bash-cli.sh
+    # We need to find bash-cli.sh relative to where this bundler script is located.
+    # Use $BASH_SOURCE[0] to get the path to the currently executing script.
+    local bundler_script_path="${BASH_SOURCE[0]}"
+    local bundler_script_dir="$(dirname "$(_bundler_get_abs_path "$bundler_script_path" "$current_working_dir")")" # Get absolute physical directory of this bundler script
+    if [[ -z "$bundler_script_dir" ]]; then
+        _bundler_log_error "Could not determine bundler script's directory. Cannot locate 'bash-cli.sh'."
+        return 1
+    fi
+
+    local bash_cli_path=$(_bundler_get_abs_path "bash-cli.sh" "$bundler_script_dir") # Try to find bash-cli.sh in bundler's dir
+    if [[ -z "$bash_cli_path" ]]; then
+        _bundler_log_error "Could not find 'bash-cli.sh'. Please ensure it's in the same directory as the bundler ('$bundler_script_dir'), or provide its absolute path within the bundler logic."
+        return 1
+    fi
+
+
+    # --- Step 1: Write initial shebang and header ---
+    exec 3>"$output_file" || { _bundler_log_error "Could not open output file '$output_file' for writing."; return 1; }
+
+    if [[ "$keep_shebang" == "true" ]]; then
+        local main_shebang_line=""
+        # Read the actual shebang from the main script
+        if IFS= read -r first_line < "$main_script_abs_path"; then
+            if [[ "$first_line" =~ ^#\!.* ]]; then # Be more general with shebang regex
+                main_shebang_line="$first_line"
+            fi
+        fi
+        echo "${main_shebang_line:-#!/bin/bash}" >&3 # Use main shebang or default
+    else
+        echo "#!/bin/bash" >&3
+        echo "# Generated by bash-cli.sh bundler. Version $(date +%Y%m%d%H%M%S)" >&3
+    fi
+    echo "" >&3 # Add a newline after shebang/header
+
+    # --- Step 2: Include core bash-cli.sh framework functions ---
+    # This ensures fundamental functions like cli_register_command are available early.
+    _bundler_log_info "Including core bash-cli.sh framework definitions from '$bash_cli_path'..."
+    echo "# --- Core bash-cli.sh Framework Definitions ---" >&3
+    local in_framework_section=false
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Start at "Global Configuration" and stop before "Code Generation Tool Functions"
+        if [[ "$line" =~ ^#\ ---[[:space:]]Global[[:space:]]Configuration[[:space:]]and[[:space:]]Variables[[:space:]]--- ]]; then
+            in_framework_section=true
+        fi
+        if [[ "$line" =~ ^#\ ---[[:space:]]Code[[:space:]]Generation[[:space:]]Tool[[:space:]]Functions[[:space:]]--- ]]; then
+            in_framework_section=false
+            break # Stop reading, we've passed the core framework
+        fi
+
+        if $in_framework_section; then
+            # Do NOT include the initial shebang of bash-cli.sh itself
+            if [[ ! "$line" =~ ^#\!.* ]]; then # General shebang check
+                echo "$line" >&3
+            fi
+        fi
+    done < "$bash_cli_path"
+    echo "" >&3 # Add a newline after framework content
+
+
+    # --- Step 3: Recursively queue the main script and its sources ---
+    # This populates _BUNDLER_CONTENT_QUEUE with files in dependency order.
+    _bundler_log_info "Scanning main script and its dependencies..."
+    local main_script_dir="$(dirname "$main_script_abs_path")"
+    if ! _bundler_extract_and_queue_content "$main_script_abs_path" "$main_script_dir" "true"; then
+        _bundler_log_error "Bundling failed during dependency scanning."
+        exec 3>&- # Close file descriptor
+        return 1
+    fi
+
+    # _bundler_log_info "Bundling queue (order of inclusion):"
+    # for f in "${_BUNDLER_CONTENT_QUEUE[@]}"; do
+    #     _bundler_log_info "  - $(basename "$f")"
+    # done
+
+
+    # --- Step 4: Write content of all queued files to the output file ---
+    # Loop through the topologically sorted queue
+    for file_to_bundle in "${_BUNDLER_CONTENT_QUEUE[@]}"; do
+        echo -e "\n# --- Content from: $(basename "$file_to_bundle") (${file_to_bundle}) ---" >&3
+
+        local current_file_is_main_script=false
+        if [[ "$file_to_bundle" == "$main_script_abs_path" ]]; then
+            current_file_is_main_script=true
+        fi
+
+        # Read each file and filter out shebangs, source lines, and the final cli_run from the main script.
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # 1. Skip shebangs in all files
+            if [[ "$line" =~ ^#\!.* ]]; then
+                continue
+            fi
+            # 2. Skip source/dot commands as content is already bundled
+            local temp_sourced_path=$(_bundler_get_sourced_path "$line")
+            if [[ -n "$temp_sourced_path" ]]; then
+                continue
+            fi
+
+            # 3. Capture the cli_run "$@" line from the main script only, and defer its writing.
+            if $current_file_is_main_script && [[ "$line" =~ ^[[:space:]]*cli_run[[:space:]]+\"\$@\"[[:space:]]*$ ]]; then
+                _BUNDLER_CLI_RUN_LINE="$line"
+                continue # Do not write it yet
+            fi
+            echo "$line" >&3
+        done < "$file_to_bundle"
+    done
+
+    # --- Step 5: Finally, append the cli_run "$@" line if found in the main script ---
+    if [[ -n "$_BUNDLER_CLI_RUN_LINE" ]]; then
+        echo -e "\n# --- Main CLI Execution ---" >&3
+        echo "$_BUNDLER_CLI_RUN_LINE" >&3
+    else
+        _bundler_log_warn "No 'cli_run \"\$@\"' line found in the main script '$main_script_name'. The bundled script might not execute as expected."
+        echo -e "\n# Warning: No 'cli_run \"\$@\"' line found in the original main script. Add it manually if needed." >&3
+    fi
+
+    exec 3>&- # Close output file descriptor
+    chmod +x "$output_file" # Make the bundled script executable
+
+    _bundler_log_success "Bundling complete: '${output_file}'"
+    return 0
+}
+
+# --- Help Message for the Bundler ---
+_bundler_display_help_message() {
+    echo -e "${CLI_COLOR_BOLD}Usage: $(basename "$0") <main_script_name> [options]${CLI_COLOR_RESET}"
+    echo ""
+    echo -e "${CLI_COLOR_BOLD}DESCRIPTION:${CLI_COLOR_RESET}"
+    echo "  Bundles a Bash CLI main script and all its 'source'd dependencies into a single, standalone executable."
+    echo ""
+    echo -e "${CLI_COLOR_BOLD}ARGUMENTS:${CLI_COLOR_RESET}"
+    printf "  %-25s %s\n" "<main_script_name>" "The path to your main CLI script (e.g., './mycli.sh')."
+    echo ""
+    echo -e "${CLI_COLOR_BOLD}OPTIONS:${CLI_COLOR_RESET}"
+    printf "  %-25s %s\n" "--output <file>" "Specify the output bundled file name (default: <main_script_name>-bundled.sh)."
+    printf "  %-25s %s\n" "--keep-shebang" "Keep the shebang (#!/bin/bash) from the main script in the bundled output."
+    printf "  %-25s %s\n" "-h, --help" "Show this help message."
+    echo ""
+    echo -e "${CLI_COLOR_BOLD}Example:${CLI_COLOR_RESET}"
+    echo "  $(basename "$0") mycli.sh --output mycli-bundle.sh"
+    echo "  $(basename "$0") main.sh --keep-shebang"
+    echo ""
+}
 
 # Init command for bash-cli.sh itself.
 # Args: <main_script_name> [--commands-dir <dir>]
@@ -929,6 +1347,9 @@ if [[ "$(basename "$0")" == "bash-cli.sh" ]]; then
         add)
             _cli_generator_add "$@"
             ;;
+        bundle)
+            _cli_generator_bundle "$@"
+	    ;;
         *)
             echo -e "${CLI_COLOR_RED}Error: Unknown generator command: '$command'${CLI_COLOR_RESET}" >&2
             echo "Use 'bash-cli.sh init' or 'bash-cli.sh add'."
@@ -953,3 +1374,4 @@ cli_register_global_flag \
 
 # If this script is sourced, the framework functions are available for the main CLI script.
 # No further action needed here, as cli_run will be called by the main script.
+
